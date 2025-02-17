@@ -64,7 +64,7 @@ namespace RunGroopWebApp.Controllers
                     }
                 };
 
-                _raceRepository.Add(race);
+                await _raceRepository.Add(race);
                 return RedirectToAction("Index");
             }
 
@@ -89,55 +89,81 @@ namespace RunGroopWebApp.Controllers
             };
             return View(raceVM);
         }
-
         [HttpPost("edit/{id}")]
         public async Task<IActionResult> Edit(int id, EditRaceViewModel raceVM)
         {
+            // Check if the model state is valid
             if (!ModelState.IsValid)
             {
-                ModelState.AddModelError("", "Failed to edit club");
-                Console.WriteLine("Failed to edit club");
+                ModelState.AddModelError("", "Failed to edit race");
                 return View("Edit", raceVM);
             }
 
-            //Console.WriteLine("Failed to edit club");
+            // Get the existing entity (tracked)
+            var userRace = await _raceRepository.GetByIdAsync(id);
 
-            var userRace = await _raceRepository.GetByIdAsyncNoTracking(id);
-
-            if (userRace != null)
+            if (userRace == null)
             {
-                try
+                ModelState.AddModelError("", "Race not found");
+                return View("Edit", raceVM);
+            }
+
+            try
+            {
+                // Delete the old photo if it exists
+                if (!string.IsNullOrEmpty(userRace.Image))
                 {
                     await _photoService.DeletePhotoAsync(userRace.Image);
                 }
-                catch (Exception ex)
-                {
-                    ModelState.AddModelError("", "Could not delete photo");
-                    return View(raceVM);
-                }
+            }
+            catch (Exception ex)
+            {
+                ModelState.AddModelError("", "Could not delete photo: " + ex.Message);
+                return View("Edit", raceVM);
+            }
 
-                var photoResult = await _photoService.AddPhotoAsync(raceVM.Image);
+            // Add the new photo
+            var photoResult = await _photoService.AddPhotoAsync(raceVM.Image);
 
-                var race = new Race
-                {
-                    Id = id,
-                    Title = raceVM.Title,
-                    Description = raceVM.Description,
-                    Image = photoResult.Url.ToString(),
-                    AddressId = raceVM.AddressId,
-                    Address = raceVM.Address,
-                };
+            // Update properties of the existing entity instead of creating a new one
+            userRace.Title = raceVM.Title;
+            userRace.Description = raceVM.Description;
+            userRace.Image = photoResult.Url.ToString();
+            userRace.AddressId = raceVM.AddressId;
+            userRace.Address = raceVM.Address;
 
-                var result = _raceRepository.Update(race);
+            // Update the entity in the repository
+            var result = await _raceRepository.Update(userRace); // Now updating the tracked entity
 
+            if (result)
+            {
                 return RedirectToAction("Index");
             }
             else
             {
-                return View(raceVM);
+                ModelState.AddModelError("", "Failed to update race");
+                return View("Edit", raceVM);
             }
         }
 
+
+        public async Task<IActionResult> Delete(int id)
+        {
+            var clubDetails = await _raceRepository.GetByIdAsync(id);
+            if (clubDetails == null) return View("Error");
+            return View(clubDetails);
+        }
+
+        [HttpPost, ActionName("Delete")]
+
+        public async Task<IActionResult> DeleteClub(int id)
+        {
+            var clubDetails = await _raceRepository.GetByIdAsync(id);
+            if (clubDetails == null) return View("Error");
+
+            await _raceRepository.Delete(clubDetails);
+            return RedirectToAction("Index");
+        }
 
 
     }
